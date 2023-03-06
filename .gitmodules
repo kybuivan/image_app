@@ -1,0 +1,4 @@
+[submodule "cmake"]
+	path = cmake
+	url = https://github.com/kybuivan/cmake.git
+	branch = main

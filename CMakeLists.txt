@@ -11,7 +11,7 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake ${PROJECT_SOURCE_DIR}/
 include(FetchContent)
 include(rttr)
 include(glfw)
-include(glad)
+include(glad2)
 include(nfd)
 include(imgui)
 #opengl

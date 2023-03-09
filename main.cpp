@@ -6,8 +6,8 @@
 #if defined(IMGUI_IMPL_OPENGL_ES2)
 #include <GLES2/gl2.h>
 #endif
-#include "glad\glad.h"
-#include <GLFW\glfw3.h> // Will drag system OpenGL headers
+#include <glad/gl.h>
+#include <GLFW/glfw3.h> // Will drag system OpenGL headers
 #include <iostream>
 #include <rttr/type>
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -83,11 +83,10 @@ int main(int, char**)
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-     // glad: load all OpenGL function pointers
-    // ---------------------------------------
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    int version = gladLoadGL(glfwGetProcAddress);
+    if (version == 0)
     {
-        std::cout << "Failed to initialize GLAD" << std::endl;
+        std::cout << "Failed to initialize OpenGL context" << std::endl;
         return -1;
     }
     // Setup Dear ImGui context

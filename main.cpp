@@ -10,6 +10,29 @@
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 #include <iostream>
 #include <rttr/type>
+#include <nlohmann/json.hpp>
+
+class Entity;
+class IComponent {
+    RTTR_ENABLE();
+
+  public:
+    virtual ~IComponent() = default;
+    [[nodiscard]] rttr::type type() const;
+
+    virtual nlohmann::json serialize();
+    virtual void deserialize(const nlohmann::json &js);
+    virtual void on_inspector();
+
+    virtual void init(Entity *entity) {}
+    virtual void destroy() {}
+};
+
+template <typename T> auto register_component(const std::string &name) {
+    return rttr::registration::class_<T>(name).template constructor<>()(
+        rttr::policy::ctor::as_raw_ptr);
+}
+
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
 
@@ -17,7 +40,10 @@ void processInput(GLFWwindow *window);
 #pragma comment(lib, "legacy_stdio_definitions")
 #endif
 
-bool input_property(const rttr::instance &instance, rttr::property property);
+bool input_property(const rttr::instance &instance, rttr::property property)
+{
+    return true;
+}
 
 const char *vertexShaderSource = "#version 330 core\n"
     "layout (location = 0) in vec3 aPos;\n"

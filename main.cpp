@@ -11,6 +11,7 @@
 #include <iostream>
 #include <rttr/type>
 #include <nlohmann/json.hpp>
+#include <fstream>
 
 class Entity;
 class IComponent {
@@ -71,6 +72,15 @@ static void glfw_error_callback(int error, const char* description)
 
 int main(int, char**)
 {
+    // read a JSON file
+    std::ifstream i("file.json");
+    nlohmann::json j;
+    i >> j;
+
+    // write prettified JSON to another file
+    std::ofstream o("pretty.json");
+    o << std::setw(4) << j << std::endl;
+
     // Setup window
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())

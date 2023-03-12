@@ -13,22 +13,6 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 
-class Entity;
-class IComponent {
-    RTTR_ENABLE();
-
-  public:
-    virtual ~IComponent() = default;
-    [[nodiscard]] rttr::type type() const;
-
-    virtual nlohmann::json serialize();
-    virtual void deserialize(const nlohmann::json &js);
-    virtual void on_inspector();
-
-    virtual void init(Entity *entity) {}
-    virtual void destroy() {}
-};
-
 template <typename T> auto register_component(const std::string &name) {
     return rttr::registration::class_<T>(name).template constructor<>()(
         rttr::policy::ctor::as_raw_ptr);
@@ -46,18 +30,113 @@ bool input_property(const rttr::instance &instance, rttr::property property)
     return true;
 }
 
-const char *vertexShaderSource = "#version 330 core\n"
-    "layout (location = 0) in vec3 aPos;\n"
-    "void main()\n"
-    "{\n"
-    "   gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
-    "}\0";
-const char *fragmentShaderSource = "#version 330 core\n"
-    "out vec4 FragColor;\n"
-    "void main()\n"
-    "{\n"
-    "   FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n"
-    "}\n\0";
+using json = nlohmann::json;
+
+// Forward declarations
+class Component;
+class Entity;
+class System;
+
+
+class Component {
+    RTTR_ENABLE();
+
+  public:
+    virtual ~Component() = default;
+    [[nodiscard]] rttr::type type() const;
+
+    virtual void serialize(json& j);
+    virtual void deserialize(const json& j);
+    virtual void renderEditor() {}
+    virtual void on_inspector();
+
+    virtual void init(Entity *entity) {}
+    virtual void destroy() {}
+};
+
+// Entity class
+class Entity {
+public:
+    Entity() {}
+    ~Entity() {}
+
+    void addComponent(Component* component) {
+        m_components.push_back(component);
+    }
+
+    void removeComponent(Component* component) {
+        auto it = std::find(m_components.begin(), m_components.end(), component);
+        if (it != m_components.end()) {
+            m_components.erase(it);
+        }
+    }
+
+    void serialize(json& j) {
+        for (auto component : m_components) {
+            json componentJson;
+            component->serialize(componentJson);
+            j["components"].push_back(componentJson);
+        }
+    }
+
+    void deserialize(const json& j) {
+        for (auto& componentJson : j["components"]) {
+            const std::string typeName = componentJson["type"];
+            auto type = rttr::type::get_by_name(typeName);
+            if (type.is_valid()) {
+                Component* component = type.create().get_value<Component*>();
+                component->deserialize(componentJson);
+                addComponent(component);
+            }
+        }
+    }
+
+    void renderEditor() {
+        ImGui::Text("Entity %d", m_id);
+        ImGui::Separator();
+        for (auto component : m_components) {
+            component->renderEditor();
+        }
+    }
+
+    int m_id;
+    std::vector<Component*> m_components;
+};
+
+// System class
+class System {
+public:
+    virtual ~System() {}
+    virtual void update() {}
+};
+
+// Position component
+class Position : public Component {
+public:
+    RTTR_ENABLE(Component)
+    Position() : x(0.0f), y(0.0f) {}
+    Position(float x, float y) : x(x), y(y) {}
+
+    void serialize(json& j) override {
+        j["type"] = "Position";
+        j["x"] = x;
+        j["y"] = y;
+    }
+
+    void deserialize(const json& j) override {
+        x = j["x"];
+        y = j["y"];
+    }
+
+    void renderEditor() override {
+        ImGui::Text("Position");
+        ImGui::InputFloat("x", &x);
+        ImGui::InputFloat("y", &y);
+    }
+
+    float x;
+    float y;
+};
  
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
@@ -78,36 +157,18 @@ int main(int, char**)
     i >> j;
 
     // write prettified JSON to another file
-    std::ofstream o("pretty.json");
-    o << std::setw(4) << j << std::endl;
+    // std::ofstream o("pretty.json");
+    // o << std::setw(4) << j << std::endl;
 
     // Setup window
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
         return 1;
 
-    // Decide GL+GLSL versions
-#if defined(IMGUI_IMPL_OPENGL_ES2)
-    // GL ES 2.0 + GLSL 100
-    const char* glsl_version = "#version 100";
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-#elif defined(__APPLE__)
-    // GL 3.2 + GLSL 150
-    const char* glsl_version = "#version 150";
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // Required on Mac
-#else
     // GL 3.0 + GLSL 130
     const char* glsl_version = "#version 130";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-    //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
-#endif
 
     // Create window with graphics context
     GLFWwindow* window = glfwCreateWindow(1280, 720, "Dear ImGui GLFW+OpenGL3 example", NULL, NULL);
@@ -130,15 +191,9 @@ int main(int, char**)
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
-    //io.ConfigViewportsNoAutoMerge = true;
-    //io.ConfigViewportsNoTaskBarIcon = true;
-
-    // Setup Dear ImGui style
     ImGui::StyleColorsDark();
-    //ImGui::StyleColorsLight();
 
     // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
     ImGuiStyle& style = ImGui::GetStyle();
@@ -156,79 +211,6 @@ int main(int, char**)
     bool show_demo_window = true;
     bool show_another_window = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-    // build and compile our shader program
-    // ------------------------------------
-    // vertex shader
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-    // check for shader compile errors
-    int success;
-    char infoLog[512];
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success)
-    {
-        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-        std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
-    }
-    // fragment shader
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-    // check for shader compile errors
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if (!success)
-    {
-        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-        std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
-    }
-    // link shaders
-    unsigned int shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-    // check for linking errors
-    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-    if (!success) {
-        glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-        std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
-    }
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    // set up vertex data (and buffer(s)) and configure vertex attributes
-    // ------------------------------------------------------------------
-    float vertices[] = {
-         0.5f,  0.5f, 0.0f,  // top right
-         0.5f, -0.5f, 0.0f,  // bottom right
-        -0.5f, -0.5f, 0.0f,  // bottom left
-        -0.5f,  0.5f, 0.0f   // top left 
-    };
-    unsigned int indices[] = {  // note that we start from 0!
-        0, 1, 3,  // first Triangle
-        1, 2, 3   // second Triangle
-    };
-    unsigned int VBO, VAO, EBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
-    // bind the Vertex Array Object first, then bind and set vertex buffer(s), and then configure vertex attributes(s).
-    glBindVertexArray(VAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // note that this is allowed, the call to glVertexAttribPointer registered VBO as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
-    glBindBuffer(GL_ARRAY_BUFFER, 0); 
-
-    glBindVertexArray(0); 
 
     // Main loop
     while (!glfwWindowShouldClose(window))
@@ -284,12 +266,6 @@ int main(int, char**)
         glViewport(0, 0, display_w, display_h);
         glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
         glClear(GL_COLOR_BUFFER_BIT);
-
-        // draw our first triangle
-        glUseProgram(shaderProgram);
-        glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
-        //glDrawArrays(GL_TRIANGLES, 0, 6);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     	

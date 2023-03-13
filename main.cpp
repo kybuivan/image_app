@@ -1,34 +1,18 @@
+#include <stdio.h>
+#include <fstream>
+#include <iostream>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
-#include <stdio.h>
 #define GL_SILENCE_DEPRECATION
-#if defined(IMGUI_IMPL_OPENGL_ES2)
-#include <GLES2/gl2.h>
-#endif
 #include <glad/gl.h>
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
-#include <iostream>
 #include <rttr/type>
 #include <nlohmann/json.hpp>
-#include <fstream>
-
-template <typename T> auto register_component(const std::string &name) {
-    return rttr::registration::class_<T>(name).template constructor<>()(
-        rttr::policy::ctor::as_raw_ptr);
-}
-
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void processInput(GLFWwindow *window);
-
+#include <entt/entity/registry.hpp>
 #if defined(_MSC_VER) && (_MSC_VER >= 1900) && !defined(IMGUI_DISABLE_WIN32_FUNCTIONS)
 #pragma comment(lib, "legacy_stdio_definitions")
 #endif
-
-bool input_property(const rttr::instance &instance, rttr::property property)
-{
-    return true;
-}
 
 using json = nlohmann::json;
 
@@ -137,17 +121,6 @@ public:
     float x;
     float y;
 };
- 
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
-{
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, GLFW_TRUE);
-}
-
-static void glfw_error_callback(int error, const char* description)
-{
-    fprintf(stderr, "Glfw Error %d: %s\n", error, description);
-}
 
 int main(int, char**)
 {
@@ -156,12 +129,7 @@ int main(int, char**)
     nlohmann::json j;
     i >> j;
 
-    // write prettified JSON to another file
-    // std::ofstream o("pretty.json");
-    // o << std::setw(4) << j << std::endl;
-
     // Setup window
-    glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
         return 1;
 
@@ -175,11 +143,8 @@ int main(int, char**)
     if (window == NULL)
         return 1;
 
-    glfwSetKeyCallback(window, key_callback);
-    
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
-    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     int version = gladLoadGL(glfwGetProcAddress);
     if (version == 0)
     {
@@ -249,7 +214,6 @@ int main(int, char**)
             ImGui::End();
         }
 
-        // 3. Show another simple window.
         if (show_another_window)
         {
             ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
@@ -290,15 +254,4 @@ int main(int, char**)
     glfwTerminate();
 
     return 0;
-}
-
-void processInput(GLFWwindow *window)
-{
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
-}
-
-void framebuffer_size_callback(GLFWwindow* window, int width, int height)
-{
-    glViewport(0, 0, width, height);
 }
